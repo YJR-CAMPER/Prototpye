@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using UnityEngine;
 
 /// <summary>
@@ -50,18 +51,23 @@ public class WorldItem : MonoBehaviour
 
     private void TryPickup()
     {
-        InventoryItem result = _playerInventory.AddItem(itemData, count);
+        // InventoryManager.AddItem도 int(남은 개수)를 반환하도록 랩핑해야 합니다.
+        int remaining = _playerInventory.AddItems(itemData, count);
 
-        if (result != null)
+        if (remaining == 0)
         {
-            // 줍기 성공
-            // TODO: 효과음, 이펙트
+            // 전부 다 주웠음
             Destroy(gameObject);
+        }
+        else if (remaining < count)
+        {
+            // 일부만 주웠음 (남은 개수로 갱신)
+            count = remaining;
+            Debug.Log($"인벤토리가 가득 차서 {remaining}개 남음!");
         }
         else
         {
-            // 인벤토리 공간 부족
-            // TODO: UI 피드백 ("인벤토리가 가득 찼습니다")
+            // 하나도 못 주웠음
             Debug.Log("인벤토리 공간 부족!");
         }
     }

@@ -187,7 +187,8 @@ public class InventoryGrid
     /// 같은 데이터의 기존 스택에 먼저 합치고, 남으면 빈 공간을 찾아 자동 배치합니다.
     /// 배치 성공한 아이템을 반환합니다. 공간 부족 시 null.
     /// </summary>
-    public InventoryItem TryAutoPlace(ItemData data, int count = 1)
+    // 남은 아이템 개수를 반환하도록 수정 (0이면 전부 다 넣은 것)
+    public int TryAutoPlace(ItemData data, int count = 1)
     {
         int remaining = count;
 
@@ -200,28 +201,33 @@ public class InventoryGrid
                 {
                     int added = existing.AddToStack(remaining);
                     remaining -= added;
-                    if (remaining <= 0)
-                        return existing;
+                    if (remaining <= 0) return 0;
                 }
             }
         }
 
-        // 2단계: 빈 공간 찾기 (회전 없이 먼저, 실패 시 회전)
-        Vector2Int? pos = FindFreePosition(data.width, data.height);
-        bool rotated = false;
-
-        if (pos == null && data.width != data.height)
+        // 2단계: 남은 개수를 새로운 스택으로 계속 쪼개서 빈 공간에 넣기
+        while (remaining > 0)
         {
-            pos = FindFreePosition(data.height, data.width);
-            rotated = true;
+            Vector2Int? pos = FindFreePosition(data.width, data.height);
+            bool rotated = false;
+
+            if (pos == null && data.width != data.height)
+            {
+                pos = FindFreePosition(data.height, data.width);
+                rotated = true;
+            }
+
+            if (pos == null) break; // 더 이상 빈 공간이 없음
+
+            // 남은 개수 중 maxStack만큼만 떼어서 새 아이템 배치
+            int amountToPlace = Mathf.Min(remaining, data.maxStack);
+            PlaceNewItem(data, pos.Value, rotated, amountToPlace);
+            remaining -= amountToPlace;
         }
 
-        if (pos == null)
-            return null;
-
-        return PlaceNewItem(data, pos.Value, rotated, remaining);
+        return remaining; // 인벤토리에 넣지 못하고 남은 개수 반환
     }
-
     /// <summary>
     /// 지정 크기의 아이템이 들어갈 수 있는 첫 번째 빈 좌표를 찾습니다.
     /// 좌상단부터 행 우선 탐색 (왼쪽→오른쪽, 위→아래).
