@@ -58,13 +58,14 @@ public class Projectile : MonoBehaviour
             return;
         }
 
-        IDamageable target = other.GetComponent<IDamageable>();
+        DamageableBase target = other.GetComponent<DamageableBase>();
         if (target != null)
         {
             // 관통력 적용 데미지 계산
             float effectiveDefense = target.Defense * (1f - _penetration);
             float finalDamage = Mathf.Max(1f, _damage - effectiveDefense);
-            target.TakeDamage(finalDamage);
+            // 투사체 위치 기준으로 넉백 방향 결정 (뒤통수에 맞으면 앞으로 밀림)
+            target.TakeDamageWithKnockback(finalDamage, transform.position);
         }
 
         // 관통 처리

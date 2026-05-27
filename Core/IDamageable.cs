@@ -5,5 +5,10 @@
 public interface IDamageable
 {
     float Defense { get; }
-    void TakeDamage(float damage);
+
+    /// <summary>
+    /// 데미지를 적용합니다.
+    /// 실제로 데미지가 적용되었으면 true, 무적/사망 등으로 무시되면 false.
+    /// </summary>
+    bool TakeDamage(float damage);
 }

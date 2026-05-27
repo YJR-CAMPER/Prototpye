@@ -89,10 +89,11 @@ public abstract class DamageableBase : MonoBehaviour, IDamageable
 
     /// <summary>
     /// 데미지를 받습니다. 방어력은 이미 공격 측에서 계산된 최종 데미지가 들어옵니다.
+    /// 실제로 데미지가 적용되었으면 true, 무적/사망 등으로 무시되면 false를 반환합니다.
     /// </summary>
-    public virtual void TakeDamage(float damage)
+    public virtual bool TakeDamage(float damage)
     {
-        if (_isDead || IsInvincible) return;
+        if (_isDead || IsInvincible) return false;
 
         _currentHealth -= damage;
         _currentHealth = Mathf.Clamp(_currentHealth, 0f, maxHealth);
@@ -108,6 +109,8 @@ public abstract class DamageableBase : MonoBehaviour, IDamageable
             _isDead = true;
             HandleDeath();
         }
+
+        return true;
     }
 
     // ──────────────────────────────────
@@ -146,15 +149,16 @@ public abstract class DamageableBase : MonoBehaviour, IDamageable
 
     /// <summary>
     /// 데미지 + 넉백을 동시에 처리합니다.
-    /// 외부에서 편리하게 호출하기 위한 메서드.
+    /// 데미지가 실제로 적용된 경우에만 넉백을 적용합니다.
     /// </summary>
+    /// <param name="damage">최종 데미지</param>
+    /// <param name="sourcePosition">데미지를 준 주체의 위치 (넉백 방향 계산용)</param>
     public virtual void TakeDamageWithKnockback(float damage, Vector2 sourcePosition)
     {
-        TakeDamage(damage);
+        bool damageTaken = TakeDamage(damage);
 
-        // 무적으로 데미지가 무시되었으면 넉백도 안 함
-        if (!IsInvincible || _currentHealth <= 0f)
-            return;
+        // 데미지를 입지 않았거나(무적), 사망했으면 넉백 무시
+        if (!damageTaken || _isDead) return;
 
         ApplyKnockback(sourcePosition);
     }

@@ -91,11 +91,11 @@ public class PlayerCombat : MonoBehaviour
 
         foreach (Collider2D hit in hits)
         {
-            IDamageable target = hit.GetComponent<IDamageable>();
+            DamageableBase target = hit.GetComponent<DamageableBase>();
             if (target != null)
             {
                 float finalDamage = CalculateDamage(equippedWeapon, target.Defense);
-                target.TakeDamage(finalDamage);
+                target.TakeDamageWithKnockback(finalDamage, transform.position);
             }
         }
     }

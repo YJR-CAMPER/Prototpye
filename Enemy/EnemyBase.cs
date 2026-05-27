@@ -8,11 +8,12 @@ using UnityEngine;
 /// [필수 컴포넌트]
 /// - Rigidbody2D (DamageableBase에서 RequireComponent)
 /// - Collider2D
+/// - SpriteRenderer (방향 전환용)
 /// 
 /// [사용법]
 /// 1. 적 프리팹에 이 스크립트(또는 상속 클래스)를 부착합니다.
 /// 2. Inspector에서 EnemyData, wallCheck, groundAheadCheck 등을 설정합니다.
-/// 3. 플레이어에 "Player" 태그를 부여합니다.
+/// 3. 스포너(또는 게임매니저)에서 SetPlayer()로 플레이어 참조를 주입합니다.
 /// </summary>
 public class EnemyBase : DamageableBase
 {
@@ -22,11 +23,11 @@ public class EnemyBase : DamageableBase
 
     [Header("데이터")]
     [SerializeField] private EnemyData enemyData;
-    [SerializeField] private int currentFloor = 1; // 현재 층계 (스케일링용)
+    [SerializeField] private int currentFloor = 1;
 
     [Header("감지")]
-    [SerializeField] private Transform wallCheck;        // 전방 벽 감지 위치
-    [SerializeField] private Transform groundAheadCheck; // 전방 낭떠러지 감지 위치
+    [SerializeField] private Transform wallCheck;
+    [SerializeField] private Transform groundAheadCheck;
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private LayerMask playerLayer;
 
@@ -50,13 +51,18 @@ public class EnemyBase : DamageableBase
     public EnemyAttackState AttackState { get; private set; }
     public EnemyDeadState DeadState { get; private set; }
 
+    // 비주얼
+    private SpriteRenderer _spriteRenderer;
+
     // ──────────────────────────────────
     // 초기화
     // ──────────────────────────────────
 
     protected override void Awake()
     {
-        base.Awake(); // DamageableBase: Rb 할당, 체력 초기화
+        base.Awake();
+
+        _spriteRenderer = GetComponentInChildren<SpriteRenderer>();
 
         StateMachine = new EnemyStateMachine();
         IdleState = new EnemyIdleState();
@@ -68,21 +74,37 @@ public class EnemyBase : DamageableBase
 
     private void Start()
     {
-        // 층계 스케일링 적용
         ApplyFloorScaling(currentFloor);
 
-        // 플레이어 참조
-        GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-        if (playerObj != null)
-            PlayerTransform = playerObj.transform;
+        // 플레이어 참조가 아직 주입되지 않은 경우 (에디터 테스트 등) 폴백
+        if (PlayerTransform == null)
+        {
+            GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
+            if (playerObj != null)
+                PlayerTransform = playerObj.transform;
+        }
 
-        // 초기 상태
         StateMachine.ChangeState(IdleState, this);
     }
 
     /// <summary>
-    /// 절차적 맵 생성 시 스포너에서 호출하여 층계를 설정합니다.
+    /// 스포너/게임매니저에서 호출하여 플레이어 참조를 주입합니다.
+    /// FindGameObjectWithTag 대신 이 메서드를 사용하세요.
     /// </summary>
+    public void SetPlayer(Transform playerTransform)
+    {
+        PlayerTransform = playerTransform;
+    }
+
+    /// <summary>
+    /// 절차적 맵 생성 시 스포너에서 호출하여 층계 + 플레이어를 동시에 설정합니다.
+    /// </summary>
+    public void Initialize(int floor, Transform playerTransform)
+    {
+        SetFloor(floor);
+        SetPlayer(playerTransform);
+    }
+
     public void SetFloor(int floor)
     {
         currentFloor = floor;
@@ -101,15 +123,20 @@ public class EnemyBase : DamageableBase
 
     protected override void Update()
     {
-        base.Update(); // DamageableBase: 무적/넉백 타이머
+        base.Update();
 
         if (IsDead) return;
-        StateMachine.Update(this);
+
+        // 넉백 중에는 AI 갱신 건너뜀
+        if (!IsKnockedBack)
+        {
+            StateMachine.Update(this);
+        }
     }
 
     private void FixedUpdate()
     {
-        if (IsDead) return;
+        if (IsDead || IsKnockedBack) return;
         StateMachine.FixedUpdate(this);
     }
 
@@ -118,28 +145,22 @@ public class EnemyBase : DamageableBase
     // ──────────────────────────────────
 
     /// <summary>
-    /// 피격 시: 넉백도 같이 처리하도록 오버라이드.
+    /// 피격 시: 넉백은 여기서 처리하지 않습니다.
+    /// 공격 측에서 TakeDamageWithKnockback(damage, sourcePosition)을 호출하여
+    /// 실제 데미지 원점 기준으로 넉백 방향이 결정됩니다.
     /// </summary>
-    public override void TakeDamage(float damage)
+    public override bool TakeDamage(float damage)
     {
-        if (IsDead) return;
-
-        base.TakeDamage(damage);
-
-        // 넉백 (플레이어 위치로부터 밀려남)
-        if (PlayerTransform != null && !IsDead)
-        {
-            ApplyKnockback(PlayerTransform.position);
-        }
+        if (IsDead) return false;
+        return base.TakeDamage(damage);
     }
 
     /// <summary>
-    /// 사망 처리: 상태머신을 DeadState로 전환하고 드롭 처리.
+    /// 사망 처리: 상태머신을 DeadState로 전환.
     /// </summary>
     protected override void HandleDeath()
     {
-        base.HandleDeath(); // 이벤트 발동
-
+        base.HandleDeath();
         StateMachine.ChangeState(DeadState, this);
     }
 
@@ -199,7 +220,8 @@ public class EnemyBase : DamageableBase
 
     /// <summary>
     /// 근접 공격 실행. AttackState에서 호출됩니다.
-    /// IDamageable 인터페이스를 통해 플레이어에게 데미지.
+    /// DamageableBase의 TakeDamageWithKnockback를 사용하여
+    /// 공격자(이 적)의 위치 기준으로 넉백이 적용됩니다.
     /// </summary>
     public void PerformAttack()
     {
@@ -216,29 +238,36 @@ public class EnemyBase : DamageableBase
 
         foreach (Collider2D hit in hits)
         {
-            IDamageable target = hit.GetComponent<IDamageable>();
+            DamageableBase target = hit.GetComponent<DamageableBase>();
             if (target != null)
             {
-                // PlayerCombat.CalculateDamage와 동일한 공식 적용
-                float effectiveDefense = target.Defense; // 적 공격엔 관통력 없음
+                float effectiveDefense = target.Defense;
                 float finalDamage = Mathf.Max(1f, scaledAtk - effectiveDefense);
-                target.TakeDamage(finalDamage);
+                target.TakeDamageWithKnockback(finalDamage, transform.position);
             }
         }
     }
 
     // ──────────────────────────────────
-    // 유틸리티
+    // 유틸리티 (Fix 4: SpriteRenderer.flipX 사용)
     // ──────────────────────────────────
 
+    /// <summary>
+    /// 방향 전환. SpriteRenderer.flipX를 사용하여
+    /// 자식 오브젝트(UI, 히트박스 등)에 영향을 주지 않습니다.
+    /// </summary>
     public void Flip(float direction)
     {
         if (Mathf.Abs(direction) < 0.01f) return;
 
         FacingDirection = Mathf.Sign(direction);
-        Vector3 scale = transform.localScale;
-        scale.x = Mathf.Abs(scale.x) * FacingDirection;
-        transform.localScale = scale;
+
+        if (_spriteRenderer != null)
+        {
+            // 기본 스프라이트가 왼쪽(-1)을 향한다고 가정
+            // 오른쪽(+1)을 바라볼 때 flipX = true
+            _spriteRenderer.flipX = FacingDirection > 0f;
+        }
     }
 
     // ──────────────────────────────────

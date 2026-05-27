@@ -88,6 +88,7 @@ public class PlayerController : DamageableBase
     private float _currentStamina;
     private float _dashCooldownTimer;
     private bool _jumpInputBuffered;
+    private SpriteRenderer _spriteRenderer;
 
     // ──────────────────────────────────
     // Unity 라이프사이클
@@ -97,6 +98,7 @@ public class PlayerController : DamageableBase
     {
         base.Awake(); // DamageableBase: Rb 할당, 체력 초기화
 
+        _spriteRenderer = GetComponentInChildren<SpriteRenderer>();
         DefaultGravityScale = Rb.gravityScale;
 
         // 상태 인스턴스 생성
@@ -154,13 +156,18 @@ public class PlayerController : DamageableBase
     /// <summary>
     /// 피격 시: DamageableBase 공통 처리 + 플레이어 고유 피격 연출.
     /// </summary>
-    public override void TakeDamage(float damage)
+    public override bool TakeDamage(float damage)
     {
-        if (IsDead) return;
+        if (IsDead) return false;
 
-        base.TakeDamage(damage);
+        bool hit = base.TakeDamage(damage);
 
-        // TODO: 피격 이펙트 (화면 흔들기, 깜빡임 등)
+        if (hit)
+        {
+            // TODO: 피격 이펙트 (화면 흔들기, 깜빡임 등)
+        }
+
+        return hit;
     }
 
     /// <summary>
@@ -262,7 +269,10 @@ public class PlayerController : DamageableBase
         _dashCooldownTimer = dashCooldown;
     }
 
-    /// <summary> 이동 입력에 따라 스프라이트 방향 전환 </summary>
+    /// <summary>
+    /// 이동 입력에 따라 스프라이트 방향 전환.
+    /// SpriteRenderer.flipX를 사용하여 자식 오브젝트(UI, 무기 등)에 영향을 주지 않습니다.
+    /// </summary>
     public void FlipCheck()
     {
         if (MoveInput.x > 0.01f)
@@ -270,9 +280,12 @@ public class PlayerController : DamageableBase
         else if (MoveInput.x < -0.01f)
             FacingDirection = -1f;
 
-        Vector3 scale = transform.localScale;
-        scale.x = Mathf.Abs(scale.x) * FacingDirection;
-        transform.localScale = scale;
+        if (_spriteRenderer != null)
+        {
+            // 기본 스프라이트가 오른쪽(+1)을 향한다고 가정
+            // 왼쪽(-1)을 바라볼 때 flipX = true
+            _spriteRenderer.flipX = FacingDirection < 0f;
+        }
     }
 
     // ──────────────────────────────────
